@@ -147,11 +147,11 @@ module i2c_master(
                         end
                         else
                         begin
-                            scl <= 0;
                             if(acked) // Able to continue
                             begin
                                 if(!RESTART)
                                 begin
+                                    scl <= 0;
                                     if(!START) // start stop procedure
                                     begin
                                         stop <= 1;
@@ -167,12 +167,13 @@ module i2c_master(
                                 end
                                 else
                                 begin
-                                    if(!scl and !sda)  // restart
-                                        sda <= 1;
-                                    else if(!scl and sda)
-                                        scl <= 1;
-                                    else
-                                        start <= 0;
+                                    sda_input <= 0;
+                                    case({sda, scl}) // restart condition
+                                        0: sda <= 1;
+                                        1: scl <= 0;
+                                        2: scl <= 1;
+                                        3: start <= 0;
+                                    endcase
                                 end
                             end
                             else

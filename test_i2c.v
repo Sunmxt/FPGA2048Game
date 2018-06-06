@@ -9,6 +9,7 @@ module test_i2c_master;
     reg sda;
     reg write_sda;
     reg write_dat;
+    reg restart;
 
     wire scl;
     wire busy;
@@ -16,7 +17,7 @@ module test_i2c_master;
     wire sda_io;
     wire[7:0] dat_io;
 
-    i2c_master uut(clk, sda_io, scl, busy, running, start, rst, dat_io, addr);
+    i2c_master uut(clk, sda_io, scl, busy, running, start, restart, rst, dat_io, addr);
 
     assign sda_io = write_sda ? sda : 1'bz;
     assign dat_io = write_dat ? dat : 8'bz;
@@ -29,11 +30,13 @@ module test_i2c_master;
         dat = 8'hAA;
         addr = 8'hA0;
         clk = 0;
+        restart = 0;
         write_sda = 0;
         write_dat = 1;
 
         $dumpfile("i2c.vcd");
-        $dumpvars(0, uut);
+        $dumpvars(1, uut);
+        $dumpvars(1, write_sda);
     end
 
     always #1 clk<=~clk;
@@ -44,10 +47,14 @@ module test_i2c_master;
         #10 write_dat = 1; 
         #10 start <= 1;
         #60 sda <= 0; write_sda = 1;
-        #5 write_sda = 0;
-        #48 write_sda = 1;
+        #2  write_sda = 0;
+        #10 restart <= 1;
+        #42 write_sda = 1;
+        #2 write_sda = 0;
+        #2 restart <= 0;
+        #52 write_sda = 1;
         #5  write_sda = 0;
-        #1000;
+        #100;
         $finish;
     end
     
