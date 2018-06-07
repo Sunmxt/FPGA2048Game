@@ -12,6 +12,8 @@ Simulation is done by **GTKWave** + **Iverilog**. Please check them before you r
 
 ```bash
 make test_i2c
+make test_ssd1780
+make test_random
 ```
 
 

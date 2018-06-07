@@ -13,11 +13,12 @@ module test_i2c_master;
 
     wire scl;
     wire busy;
+    wire addr_sent;
     wire running;
     wire sda_io;
     wire[7:0] dat_io;
 
-    i2c_master uut(clk, sda_io, scl, busy, running, start, restart, rst, dat_io, addr);
+    i2c_master uut(clk, sda_io, scl, busy, running, start, restart, addr_sent, rst, dat_io, addr);
 
     assign sda_io = write_sda ? sda : 1'bz;
     assign dat_io = write_dat ? dat : 8'bz;

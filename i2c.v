@@ -6,6 +6,7 @@ module i2c_master(
     , output RUNNING
     , input START
     , input RESTART
+    , output ADDR_SENT
     , input ASYNC_RST_L
     , inout[7:0] DATA
     , input[7:0] ADDR
@@ -30,6 +31,7 @@ module i2c_master(
     assign BUSY = start &  ~(start & addr_sent & ~stop & acked);
     assign SCL = scl;
     assign SDA = sda_input == 1 ? 1'bz : sda;
+    assign ADDR_SENT = addr_sent;
 
     always @(posedge CLK or negedge ASYNC_RST_L)
     begin

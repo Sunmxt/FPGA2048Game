@@ -12,9 +12,15 @@ default:
 	echo No test target.
 
 clean:
-	rm i2c i2c.vcd
+	rm i2c i2c.vcd ssd1780 ssd1780.vcd random random.vcd
+
+test_random: random.vcd
+	$(WAVE_SHOW) $^
 
 test_i2c : i2c.vcd
+	$(WAVE_SHOW) $^
+
+test_ssd1780 : ssd1780.vcd
 	$(WAVE_SHOW) $^
 
 %.vcd : %
@@ -23,3 +29,8 @@ test_i2c : i2c.vcd
 i2c: $(VERILOG_SRC)
 	$(VCC) $(C_OPTIONS) -o $@ $^
 
+ssd1780: ssd1780.v test_ssd1780.v i2c.v
+	$(VCC) $(C_OPTIONS) -o $@ $^
+
+random: random.v test_random.v
+	$(VCC) $(C_OPTIONS) -o $@ $^
