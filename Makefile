@@ -23,6 +23,9 @@ test_i2c : i2c.vcd
 test_ssd1780 : ssd1780.vcd
 	$(WAVE_SHOW) $^
 
+test_testdisplay : testdisplay.vcd
+	$(WAVE_SHOW) $^
+
 %.vcd : %
 	$(SUML) $(SUML_OPTIONS) $^
 
@@ -34,3 +37,7 @@ ssd1780: ssd1780.v test_ssd1780.v i2c.v
 
 random: random.v test_random.v
 	$(VCC) $(C_OPTIONS) -o $@ $^
+
+testdisplay : test_testdisplay.v testdisplay.v ssd1780.v i2c.v
+	$(VCC) $(C_OPTIONS) -o $@ $^
+    

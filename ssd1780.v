@@ -7,27 +7,38 @@ module ssd1780(
     , input ASYNC_RST_L
     , output BUSY
     , output RUNNING
+    
 );
-    reg restart;
     reg start;
-    reg busy;
+    reg[1:0] busy_mask;
     wire i2c_busy;
     wire addr_sent;
 
-    assign BUSY = RUNNING & (busy | i2c_busy) & addr_sent;
+    assign BUSY = RUNNING & (i2c_busy | ~busy_mask[1]);
 
-    i2c_master i2c(CLK, SDA, SCL, i2c_busy, RUNNING, start, 1'b0, addr_sent, ASYNC_RST_L, CMD_DAT, 8'h78);
+    i2c_master i2c(CLK, SDA, SCL, i2c_busy, RUNNING, START, 1'b0, addr_sent, ASYNC_RST_L, CMD_DAT, 8'h78);
 
     always @(negedge CLK or negedge ASYNC_RST_L)
     begin
         if(!ASYNC_RST_L)
         begin
-            restart <= 0;
             start <= 0;
-            busy <= 0;
+            busy_mask <= 0;
         end
         else
+        begin
             start <= START;
+            if(RUNNING)
+            begin
+                if(!i2c_busy && !busy_mask[1])
+                    busy_mask <= busy_mask + 1'b1;
+            end
+            else
+            begin
+                if(!start && START)
+                    busy_mask <= 0;
+            end
+        end
     end
 
 endmodule

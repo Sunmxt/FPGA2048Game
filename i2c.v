@@ -26,6 +26,7 @@ module i2c_master(
     reg sda;
     reg stop;
     reg sda_input;
+    reg ok;
 
     assign RUNNING = start;
     assign BUSY = start &  ~(start & addr_sent & ~stop & acked);
@@ -43,13 +44,14 @@ module i2c_master(
                 stop <= 0;
                 cnt <= 0;
                 acked <= 0;
-                dat_sent = 0;
+                dat_sent <= 0;
                 read_bit <= 0;
                 start_cond <= 0;
                 addr_sent <= 0;
                 sda_input <= 1;
                 addr <= 0;
                 data <= 0;
+                ok <= 0;
             end
         else
             begin
@@ -64,7 +66,8 @@ module i2c_master(
                         acked <= 0;
                         start_cond <= 0;
                         addr <= ADDR;
-                        sda_input = 0;
+                        sda_input <= 0;
+                        ok <= 0;
                     end
                 end
                 else
@@ -78,7 +81,7 @@ module i2c_master(
                             // pull-down scl, prepare for address sending
                             scl <= 0;
                             cnt <= 0;
-                            dat_sent = 0;
+                            dat_sent <= 0;
                             read_bit <= addr[0];
                         end
                         else
@@ -94,25 +97,29 @@ module i2c_master(
                                 else
                                 begin   // pull up scl, notifing that sda is available
                                     scl <= 1;
-                                    dat_sent <= 0;
-                                    cnt <= cnt + 1;
+                                    if(cnt != 4'd8) // has next byte
+                                    begin
+                                        dat_sent <= 0;
+                                        cnt <= cnt + 1;
+                                    end
                                 end
                             end
                             else
                             begin
                                 if(!dat_sent)
-                                    if(cnt != 4'd9) // The last bit is 1 aimming to pull up sda.
-                                        scl <= 0; // Next 
-                                    else
+                                begin
+                                    scl <= 0; 
+                                    if(cnt == 4'd8)
                                     begin
                                         dat_sent <= 1; // Finish sending. wait for ack.
-                                        sda_input <= 1; 
-                                        cnt <= 0;
+                                        sda_input <= 1;
                                     end
+                                end
                                 else
                                 begin
                                     cnt <= cnt + 1;
-                                    if(cnt != 3) // Wait for ack
+                                    sda <= 1;
+                                    if(cnt != 4'd12) // Wait for ack
                                     begin
                                         if(!SDA) //Acked
                                         begin
@@ -122,7 +129,7 @@ module i2c_master(
                                             sda_input <= read_bit;
                                         end
                                     end
-                                    else // No acked. resrt.
+                                    else // No acked. stop directly.
                                         start <= 0;
                                 end
                             end
@@ -133,18 +140,23 @@ module i2c_master(
                         if(stop) // Generate stop condition. (initial: acked = 1)
                         begin
                             sda_input = 0;
-                            if(!scl)
-                                if(acked)
-                                begin
-                                    sda <= 0; // Stage 1
-                                    acked <= 0;
-                                end
+                            if(sda)
+                            begin
+                                if(scl)
+                                    scl <= 0;
                                 else
-                                    scl <= 1;  // Stage 2
+                                    sda <= 0;
+                            end
                             else
                             begin
-                                sda <= 1;
-                                start <= 0;  // Stage 3 : Stop condition
+                                if(scl)
+                                begin
+                                    sda <= 1;
+                                    start <= 0;
+                                    stop <= 0;
+                                end
+                                else
+                                    scl <= 1;
                             end
                         end
                         else
@@ -155,9 +167,7 @@ module i2c_master(
                                 begin
                                     scl <= 0;
                                     if(!START) // start stop procedure
-                                    begin
                                         stop <= 1;
-                                    end
                                     else
                                     begin // Begin next byte
                                         cnt <= 0;
@@ -203,8 +213,7 @@ module i2c_master(
                                         scl <= 0;
                                         if(read_bit) // Receive 1 bit
                                             data <= {sda, data[7:1]};
-                                        else
-                                            dat_sent <= 0;
+                                        dat_sent <= 0;
                                         cnt <= cnt + 1;
                                     end
                                 end
@@ -219,14 +228,20 @@ module i2c_master(
                                         end
                                         else
                                         begin
-                                            if(sda)
-                                                sda <= 0;
-                                            else
+                                            ok <= 1;
+                                            if(START)
                                             begin
-                                                acked <= 1;
-                                                scl <= 1;
-                                                sda_input <= read_bit;
+                                                if(sda)
+                                                    sda <= 0;
+                                                else
+                                                begin
+                                                    acked <= 1;
+                                                    scl <= 1;
+                                                    sda_input <= read_bit;
+                                                end
                                             end
+                                            else
+                                                stop <= 1;
                                         end
                                     end
                                     else 
@@ -236,18 +251,21 @@ module i2c_master(
                                         begin
                                             sda_input <= 1;
                                             dat_sent <= 1;
+                                            scl <= 1;
                                         end
                                         else
                                         begin
+                                            sda <= 1;
                                             if(SDA)
                                                 cnt <= cnt + 1;
                                             else
                                             begin
                                                 acked <= 1;
+                                                ok <= 1;
                                                 sda_input <= read_bit;
                                             end
-                                            if(cnt == 4'd11) // No ack. stop.
-                                                stop <= 1;
+                                            if(cnt == 4'd12) // No ack. stop.
+                                                start <= 0;
                                         end
                                     end   
                                 end
@@ -256,7 +274,6 @@ module i2c_master(
                     end
                 end
             end
-
     end
     
 endmodule
