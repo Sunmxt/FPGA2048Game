@@ -11,9 +11,9 @@ module digit_mod(
     reg [3:0] latch;
     reg [1:0] dig_cnt;
 
-    assign NUM = out;
+    assign ARR = out;
 
-    always @(dig_cnt) FINISH <= ~|{dig_cnt} & ~|{cnt};
+    always @(dig_cnt or cnt) FINISH <= dig_cnt == 0 && cnt == 0;
 
     always @(cnt or num) 
     begin
@@ -72,7 +72,6 @@ module digit_mod(
         begin
             cnt <= 0;
             num <= 0;
-            out <= 0;
             dig_cnt <= 0;
             latch <= 0;
         end
@@ -81,11 +80,11 @@ module digit_mod(
             cnt <= cnt + 1;
             if(cnt == 0)
             begin
-                if(dig_cnt == 0)
-                    latch <= NUM;
+                //if(dig_cnt == 0)
+                //    latch <= NUM;
                 dig_cnt <= dig_cnt + 1;
 
-                case(latch)
+                case(NUM)
                 0:
                     case(dig_cnt)
                         0: num <= 10;
@@ -183,11 +182,12 @@ module display2048 (
     , input [63:0] NUMS
     , input REFRESH
     , input ASNYC_RST_L
+    , output [5:0] STATE
     , output reg BUSY
     , output SCL
     , inout SDA    
 );
-    reg div;
+    reg [1:0]div;
     reg[7:0] cmd;
     reg[5:0] state;
     reg[9:0] cnt;
@@ -201,9 +201,10 @@ module display2048 (
     wire running;
     wire[7:0] mod_arr;
     wire mod_finish;
-
     
-    ssd1780 display(div, cmd, SDA, SCL, start, ASNYC_RST_L, busy, running);
+    assign STATE = state;
+
+    ssd1780 display(div[1], cmd, SDA, SCL, start, ASNYC_RST_L, busy, running);
     digit_mod digmod(shift, num, mod_arr, ASNYC_RST_L, mod_finish);
 
 
@@ -224,90 +225,131 @@ module display2048 (
         end
         else
         begin
-            div <= ~div;
+            div <= div + 1;
             case(state)
             0: begin // reset
-                BUSY <= 1;
-                cmd <= 0; start <= 1;
-                if(busy) state <= 1;
+                cmd <= 8'h00; start <= 1;
+                if(running) 
+                    state <= 1;
+                end
+            1: if(!busy) 
+               begin
+                   case(cnt)
+                   0: cmd <= 8'h8d; // Charge pump
+                   1: cmd <= 8'h14;
+                   2: cmd <= 8'haf;
+                   3: cmd <= 8'h20;
+                   4: cmd <= 8'h02;
+                   5: cmd <= 8'h00;
+                   6: cmd <= 8'h10;
+                   endcase
+                   state <= 2;
                end
-            1: if(!busy) cmd <= 8'haf; state <= 2;
-            2: if(busy) start <= 0; state <= 3;
-            3: if(!running) state <= 4;
+            2: if(busy)
+               begin
+                        start <= 0; state <= 3;
+               end
+            3: if(!running) 
+                begin
+                    if(cnt == 6)
+                    begin
+                        state <= 4;
+                        cnt <= 8'h00;
+                    end
+                    else
+                    begin
+                        state <= 0;
+                        cnt <= cnt + 1;
+                    end
+                end
             // Clear 
             4:  // Line start
-                if(!running)
+                if(pos_set)
                 begin
-                    start <= 1;
-                    if(pos_set)
-                    begin
+                        start <= 1;
                         cmd <= 8'h40;
-                        state <= 7;
-                        pos_set <= 0;
-                    end
-                    else
-                    begin // Start sending set-line command
-                        cmd <= 8'h00;
-                        if(busy) state <= 5;
-                        pos_set <= 1;
-                    end
-                end
-            5: if(!busy) 
-               begin
-                    cmd <= 8'hb0 | {6'b0, cnt[9:7]}; state <= 6;
-                    pos_set <= 1;
-               end
-            6: if(busy) start <= 0 ; state <= 13;
-            13: if(!running) 
-                begin
-                    start <= 1; state <= 14;
-                    cmd <= 8'h00;
-                end
-            14: if(busy) state <= 15;
-            15: if(!busy) start <= 0; state <= 16;
-            16: if(!running)
-                begin
-                    start <= 1; state <= 17;
-                    cmd <= 8'h00;
-                end
-            17: if(busy) cmd <= 8'h10; state <= 18;
-            18: if(!busy) start <= 0; state <= 4;
-
-            // Burst sending 0 for 128 byte.
-            7: 
-                if(~&{cnt[6:0]}) 
-                begin
-                    cmd <= 0;
-                    cnt <= cnt + 1;
-                    state <= 8;
+                        if(busy) state <= 7;
                 end
                 else
-                    state <= 9;
-            8: if(!busy) state <= 7;
-            9: if(!busy) // Stop sending 0. next line.
-                begin
-                    state <= 4;
-                    start <= 0;
-                    if(~&{cnt[9:7]})
-                        cnt <= cnt + 1;
-                    else
+                begin // Start sending set-line command
+                    start <= 1;
+                    cmd <= 8'h00;
+                    if(busy) 
                     begin
-                        cnt <= 0;
-                        state <= 10; // Finish clear
+                        //pos_set <= 1;
+                        state <= 5;
                     end
                 end
+            5: if(!busy)
+                begin
+                    case(cnt[2:0])
+                    0: cmd <= 8'h20;
+                    1: cmd <= 8'h02;
+                    2: cmd <= 8'h00;
+                    3: cmd <= 8'h10;
+                    4: cmd <= {4'hb, 1'b0, cnt[9:7]};
+                    endcase
+                    state <= 6;
+                end
+            6:  if(busy)
+                begin
+                    start <= 0; state <= 13;
+                end
+            13: if(!running)
+                begin
+                    if(cnt[2:0] == 4)
+                    begin
+                        pos_set <= 1;
+                        state <= 13;
+                        cnt[2:0] <= 0;
+                    end
+                    else
+                    begin
+                        cnt[2:0] <= cnt[2:0] + 1;
+                        state <= 4;
+                    end
+                end
+            // Burst sending 0 for 128 byte.
+            7: 
+                if(!busy) 
+                begin
+                    cmd <= 0;
+                    state <= 10;
+                end
+            9: 
+                if(!running)
+                begin
+                    cnt <= cnt + 1;
+                    if(&{cnt[6:0]})
+                    begin
+                        if(&{cnt[9:7]})
+                        begin
+                            cnt <= 0;
+                            state <= 11; // Finish
+                        end
+                        else
+                        begin
+                            pos_set <= 0;
+                            state <= 4;
+                        end
+                    end
+                    else
+                        state <= 4;
+                end
             
-            10: if(!running) state <= 11;
+            10: if(busy) 
+                begin
+                    state <= 9;
+                    start <= 0;
+                end
             // Ready
-            11: 
+            11:
                 if(REFRESH) 
                 begin
                     state <= 12;
                     cnt <= 0;
-                    BUSY <= 1;
+                    cnt[6:4] <= 0;
                 end
-                else
-                    BUSY <= 0;
             12: 
                 begin
                     // New line
@@ -315,23 +357,35 @@ module display2048 (
                     if(busy) state <= 19;
                     cmd <= 0;
                 end
-            19: if(!busy) cmd <= 8'hb0 | {6'b0, cnt[3:2]}; state <= 20;
-            20: if(busy) start <= 0; state <= 21;
-            21: if(!running) 
+            19: if(!busy) 
                 begin
-                    start <= 1; state <= 22;
-                    cmd <= 8'h00;
+                    case(cnt[6:4])
+                    0: cmd <= 8'h20;
+                    1: cmd <= 8'h02;
+                    2: cmd <= 8'h00;
+                    3: cmd <= 8'h12;
+                    4: cmd <= 8'hb0 | {5'b0, cnt[3:2], 1'b0};
+                    endcase
+                    state <= 20;
                 end
-            22: if(!busy) state <= 23;
-            23: if(busy) start <= 0; state <= 24;
-            24: if(!running)
+            20:
+                if(busy)
                 begin
-                    start <= 1; state <= 25;
-                    cmd <= 8'h00;
+                    start <= 0; state <= 21;
                 end
-            25: if(busy) cmd <= 8'h10; state <= 26;
-            26: if(!busy) start <= 0; state <= 27;
-
+            21: if(!running)
+                begin
+                    if(cnt[6:4] == 4)
+                    begin
+                        cnt[6:4] <= 0;
+                        state <= 27;
+                    end
+                    else
+                    begin
+                        cnt[6:4] <= cnt[6:4] + 1;
+                        state <= 12;
+                    end
+                end
             27: 
                 // Start sending number bitmap.
                 begin
@@ -339,67 +393,65 @@ module display2048 (
                     begin
                         start <= 1;
                         cmd <= 8'h40;
+                        state <= 28;
+                        case({cnt[3:2], cnt[1:0]})
+                            0:  num <= NUMS[63:60];
+                            1:  num <= NUMS[59:56];
+                            2:  num <= NUMS[55:52];
+                            3:  num <= NUMS[51:48];
+                            4:  num <= NUMS[47:44];
+                            5:  num <= NUMS[43:40];
+                            6:  num <= NUMS[39:36];
+                            7:  num <= NUMS[35:32];
+                            8:  num <= NUMS[31:28];
+                            9:  num <= NUMS[27:24];
+                            10: num <= NUMS[23:20];
+                            11: num <= NUMS[19:16];
+                            12: num <= NUMS[15:12];
+                            13: num <= NUMS[11:8];
+                            14: num <= NUMS[7:4];
+                            15: num <= NUMS[3:0];
+                        endcase
+                    end
+                end
+            28: if(running)
+                begin
+                    shift <= 0;
+                    state <= 29;
+                end
+            29: if(!busy)
+                begin
+                    shift <= 1;
+                    cmd <= mod_arr;
+                    state <= 30;
+                end
+            30: if(busy) 
+                begin
+                    start <= 0;
+                    state <= 31; 
+                end
+            31: if(!running)
+                begin
+                    if(!mod_finish)
+                    begin
+                        state <= 27;
                     end
                     else
                     begin
-                        if(cnt[5])
+                        cnt <= cnt + 1;
+                        if(cnt[1:0] == 2'b11)
                         begin
-                            state <= 31;
-                            start <= 0;
-                            cnt <= 0;
+                            if(cnt[3:2] == 2'b11)
+                                state <= 11;
+                            else
+                                state <= 12;
                         end
                         else
-                        begin
-                            if(busy)
-                            begin
-                                cnt <= cnt + 1;
-                                if(cnt[2:0] == 4)
-                                begin
-                                    state <= 30;
-                                    cnt[2:0] <= 0;
-                                    cnt[4:3] <= cnt[4:3] + 1;
-                                    start <= 0;
-                                end
-                                else
-                                    state <= 28;
-                            end
-                        end
+                            state <= 27;
                     end
-                    case({cnt[4:3], cnt[1:0]})
-                        0:  num <= NUMS[63:60];
-                        1:  num <= NUMS[59:56];
-                        2:  num <= NUMS[55:52];
-                        3:  num <= NUMS[51:48];
-                        4:  num <= NUMS[47:44];
-                        5:  num <= NUMS[43:40];
-                        6:  num <= NUMS[39:36];
-                        7:  num <= NUMS[35:32];
-                        8:  num <= NUMS[31:28];
-                        9:  num <= NUMS[27:24];
-                        10: num <= NUMS[23:20];
-                        11: num <= NUMS[19:16];
-                        12: num <= NUMS[15:12];
-                        13: num <= NUMS[11:8];
-                        14: num <= NUMS[7:4];
-                        15: num <= NUMS[3:0];
-                    endcase
                 end
-            28: if(!busy) 
-                begin
-                    cmd <= mod_arr;
-                    shift <= 1;
-                    state <= 29;
-                end
-            29: if(busy)
-                begin
-                    shift <= 0;
-                    if(!mod_finish)
-                        state <= 28;
-                    else
-                        state <= 27;
-                end
-            30: if(!running) state <= 12; 
-            31: if(!running) state <= 11;
+
+            endcase
         end
     end
 
